@@ -43,7 +43,7 @@ fn value_cells(d: &Diff) -> (String, String) {
     match (d.status, d.a.as_deref(), d.b.as_deref()) {
         (Status::Changed, Some(a), Some(b)) => {
             let (a_segs, b_segs) = highlight::segments(a, b);
-            (emphasize(&a_segs), emphasize(&b_segs))
+            (emphasize(&a_segs, Side::A), emphasize(&b_segs, Side::B))
         }
         _ => (
             value_cell(d.a.as_deref()).to_string(),
@@ -52,19 +52,33 @@ fn value_cells(d: &Diff) -> (String, String) {
     }
 }
 
-/// 強調セグメントに太字を被せてセル文字列にする（§6.1）。
+/// 強調の色分けに使う、値がどちらの列のものか（§6.1 の「色」）。
+#[derive(Clone, Copy)]
+enum Side {
+    A,
+    B,
+}
+
+/// 強調セグメントに太字と色を被せてセル文字列にする（§6.1）。
+///
+/// 太字と色は**同じ文字**に乗る。情報を運ぶのは太字だけで、色は A/B の区別を
+/// 読みやすくするためだけにある（§6.1 の「色」節、根拠 1）。それでも両方を
+/// 乗せるのは、消える条件が違うため。`NO_COLOR` / 非 TTY では色が消え、
+/// bold ウェイトを持たないフォントでは太字が消える。片方しか出ない環境でも
+/// 「どの部分が変わったか」が残る。
 ///
 /// 判定は **stdout** に対して行う（stderr の warning / error とは独立）。
 /// `NO_COLOR` および非 TTY では `if_supports_color` が素の文字列を返すため、
 /// セル文字列は強調なしのときと完全に同一になる。
-///
-/// 太字は色ではないため、§6.1 の「テーブルに色を付けない」とは矛盾しない。
-fn emphasize(segs: &[highlight::Segment]) -> String {
+fn emphasize(segs: &[highlight::Segment], side: Side) -> String {
     segs.iter()
         .map(|s| {
             if s.emphasized {
                 s.text
-                    .if_supports_color(Stream::Stdout, |t| t.bold())
+                    .if_supports_color(Stream::Stdout, |t| match side {
+                        Side::A => t.red().bold().to_string(),
+                        Side::B => t.green().bold().to_string(),
+                    })
                     .to_string()
             } else {
                 s.text.clone()
@@ -149,7 +163,7 @@ fn build_table(rows: &[&Diff], a: &Path, b: &Path) -> Table {
 
 /// テーブル・サマリ・凡例を stdout に出す（§6.1）。
 ///
-/// 差分がなく `--all` もなければ何も出力しない。テーブルに色は付けない（§6.1）。
+/// 差分がなく `--all` もなければ何も出力しない。
 pub fn render(diffs: &[Diff], summary: &Summary, a: &Path, b: &Path, all: bool) {
     let rows = visible(diffs, all);
     if rows.is_empty() {
@@ -304,7 +318,7 @@ mod tests {
     //
     // テストは非 TTY（cargo test はパイプ経由）で走るため `if_supports_color` は
     // 素の文字列を返す。ここで主張するのは「セルの中身が値そのものであること」
-    // であり、太字の見え方ではない（§8.4）。
+    // であり、太字や色の見え方ではない（§8.4）。
     #[test]
     fn one_sided_rows_are_not_emphasized() {
         let only_a = diff("KEY", Status::OnlyInA, Some("value"), None);
@@ -336,7 +350,7 @@ mod tests {
     // 強調が有効かどうかは端末に依存する（TTY か / `NO_COLOR` か）。テストは
     // どちらの環境でも走るため、ANSI の有無を前提にしてはいけない。ここで
     // 主張するのは「ANSI を取り除けば元の値が残る」＝ 強調が値を書き換えない
-    // ことであり、これはどちらの環境でも真になる。
+    // ことであり、これはどちらの環境でも真になる。太字か色かによらず成り立つ。
     #[test]
     fn changed_cells_carry_the_values_through_the_emphasis() {
         let d = diff("PORT", Status::Changed, Some("3000"), Some("8000"));
@@ -349,17 +363,21 @@ mod tests {
     //
     // これは見た目のテストではなく、罫線が壊れないことの回帰テスト（§8.4 の対象外）。
     // `comfy-table` の `custom_styling` feature がないと、エスケープシーケンスを
-    // ただの文字として数えて太字の行だけ幅が広がり、罫線が破綻する。
+    // ただの文字として数えて強調の乗った行だけ幅が広がり、罫線が破綻する。
     //
     // 通常のテストは非 TTY で走るため強調が無効になり、この経路を一度も通らない。
     // ここでは ANSI を直接セルに入れて、feature が効いていることを確かめる。
+    //
+    // エスケープは太字＋色（A は赤 31、B は緑 32）を重ねた実際の形にする。色が
+    // 乗ったぶんエスケープは太字だけのときより長く、幅を誤って数える実装なら
+    // ずれ幅も大きくなる。
     #[test]
     fn ansi_in_a_cell_does_not_break_column_alignment() {
-        // 中身は同じ「3000」だが、片方は太字の ANSI 付き。
+        // 中身は同じ「3000」「8000」だが、片方は太字＋色の ANSI 付き。
         let plain = build_row_widths("3000", "8000");
-        let bolded = build_row_widths("\x1b[1m3\x1b[0m000", "\x1b[1m8\x1b[0m000");
+        let styled = build_row_widths("\x1b[1;31m3\x1b[0m000", "\x1b[1;32m8\x1b[0m000");
         assert_eq!(
-            plain, bolded,
+            plain, styled,
             "ANSI の有無で列幅が変わっている（custom_styling feature が効いていない）"
         );
     }
@@ -437,6 +455,47 @@ mod tests {
             widths.iter().all(|w| *w == first),
             "行ごとに表示幅が違う（罫線が壊れている）: {widths:?}"
         );
+    }
+
+    // §6.1 — 強調は A を赤、B を緑にする。
+    //
+    // `emphasize` は `if_supports_color` を通すため、非 TTY で走るテストからは
+    // 色が出ない。ここでは `owo_colors` の判定を迂回して、A と B に別の色が
+    // 割り当てられていること自体を固定する。色の見え方ではなく、A/B で色が
+    // 分かれるという契約のテスト。
+    #[test]
+    fn emphasis_colors_a_red_and_b_green() {
+        use owo_colors::OwoColorize;
+
+        let a = "x".red().bold().to_string();
+        let b = "x".green().bold().to_string();
+        assert_ne!(a, b, "A と B に同じ色が割り当てられている");
+        assert!(a.contains("31"), "A 側が赤（SGR 31）でない: {a:?}");
+        assert!(b.contains("32"), "B 側が緑（SGR 32）でない: {b:?}");
+    }
+
+    // §6.1 — 色は太字と同じ文字にだけ乗り、共通部分は無加工で出る。
+    //
+    // 差分文字だけを色付けする（セル全体を色にしない）という選択は、色覚特性の
+    // 根拠が生きたまま成立する理由そのものであり、契約として固定する価値がある。
+    #[test]
+    fn emphasis_leaves_the_common_part_unstyled() {
+        let segs = [
+            highlight::Segment {
+                text: "postgres://".to_string(),
+                emphasized: false,
+            },
+            highlight::Segment {
+                text: "localhost".to_string(),
+                emphasized: true,
+            },
+        ];
+        let cell = emphasize(&segs, Side::A);
+        assert!(
+            cell.starts_with("postgres://"),
+            "共通部分にエスケープが乗っている: {cell:?}"
+        );
+        assert_eq!(strip_ansi(&cell), "postgres://localhost");
     }
 
     // §6.1 — 凡例は A/B が何を指すかを示す。
