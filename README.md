@@ -9,23 +9,7 @@ and the thing you actually want to know (which environment variables differ) get
 buried. envdiff reads each file as a set of environment variables and compares
 them by key.
 
-```console
-$ envdiff .env.example .env.local
-┌──────────────┬────────────────────────────────┬───────────────────────────────────┬───────────┐
-│ KEY          │ .env.example (A)               │ .env.local (B)                    │ STATUS    │
-╞══════════════╪════════════════════════════════╪═══════════════════════════════════╪═══════════╡
-│ APP_ENV      │ development                    │ production                        │ changed   │
-├──────────────┼────────────────────────────────┼───────────────────────────────────┼───────────┤
-│ API_KEY      │                                │ sk-live-abc123                    │ changed   │
-├──────────────┼────────────────────────────────┼───────────────────────────────────┼───────────┤
-│ DATABASE_URL │ postgres://localhost/myapp_dev │ postgres://prod.example.com/myapp │ changed   │
-├──────────────┼────────────────────────────────┼───────────────────────────────────┼───────────┤
-│ SENTRY_DSN   │ -                              │ https://xxx@sentry.io/1           │ only in B │
-└──────────────┴────────────────────────────────┴───────────────────────────────────┴───────────┘
-
-4 differences (3 changed, 0 only in A, 1 only in B)
-A = .env.example, B = .env.local
-```
+![demo](assets/demo.png)
 
 ## Install
 
