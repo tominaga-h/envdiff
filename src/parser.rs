@@ -77,6 +77,7 @@ impl<'a> Scanner<'a> {
 
     fn run(mut self) -> Result<ParseOutput, ParseError> {
         let mut vars: Vec<(String, Var)> = Vec::new();
+        let mut warnings: Vec<Warning> = Vec::new();
 
         while self.pos < self.input.len() {
             // 変数の行番号は「その変数が始まる行」（§5.3 の表）。空行やコメントを
@@ -86,20 +87,29 @@ impl<'a> Scanner<'a> {
                 continue;
             };
             let value = self.take_value(start_line)?;
+            let var = Var {
+                value,
+                line: start_line,
+            };
 
-            vars.push((
-                key,
-                Var {
-                    value,
-                    line: start_line,
-                },
-            ));
+            // §4.7: 後勝ち。重複はほぼ確実にバグ（書いた人は上の行が効くと思って
+            // いる）なので、黙って処理せず警告を残す。ただしパースエラーにはしない
+            // — dotenv が読めるファイルは envdiff も読めるべきであり、重複のせいで
+            // 比較全体が失敗すると本当に知りたかった差分にたどり着けない。
+            if let Some(i) = vars.iter().position(|(k, _)| *k == key) {
+                warnings.push(Warning {
+                    line: var.line,
+                    key: key.clone(),
+                    previous_line: vars[i].1.line,
+                });
+                // §5.3 の表: 行番号は後勝ちした行を採る。値と行番号が食い違うと、
+                // 出力の行番号を頼りにファイルを開いたユーザーが別の値を見る。
+                vars.remove(i);
+            }
+            vars.push((key, var));
         }
 
-        Ok(ParseOutput {
-            vars,
-            warnings: Vec::new(),
-        })
+        Ok(ParseOutput { vars, warnings })
     }
 
     /// 現在位置から先の残り。
@@ -664,6 +674,83 @@ mod tests {
         let out = parse("KEY=\"line1\nNOT_A_KEY=1\nline3\"").expect("should parse");
         assert_eq!(out.vars.len(), 1, "値の中の行は変数として拾わない");
         assert_eq!(out.vars[0].0, "KEY");
+    }
+
+    // ── §4.7 重複キー ───────────────────────────────────────
+
+    // §4.7 — 後勝ちで値を採用する。
+    #[test]
+    fn duplicate_key_takes_the_last_value() {
+        assert_eq!(
+            vars("DB_HOST=first\nDB_HOST=second"),
+            [("DB_HOST".into(), "second".to_string())]
+        );
+    }
+
+    // §4.7 — 重複はほぼ確実にバグなので、黙って処理せず警告を返す。
+    #[test]
+    fn duplicate_key_produces_a_warning_naming_the_previous_line() {
+        let out = parse("# c\nDB_HOST=first\nPORT=1\nDB_HOST=second").expect("should parse");
+        assert_eq!(out.warnings.len(), 1);
+        let w = &out.warnings[0];
+        assert_eq!(w.key, "DB_HOST");
+        assert_eq!(w.line, 4, "後勝ちした行");
+        assert_eq!(w.previous_line, 2, "上書きされた行");
+    }
+
+    // §4.7 — パースエラーにはしない。比較は正常に継続する。
+    #[test]
+    fn duplicate_key_does_not_stop_parsing() {
+        let out = parse("A=1\nA=2\nB=3").expect("重複はエラーではない");
+        assert_eq!(out.vars.len(), 2, "A（後勝ち）と B");
+    }
+
+    // §4.7 — 3 回以上の重複でも毎回警告し、行番号は直前の出現を指す。
+    #[test]
+    fn three_occurrences_warn_each_time_pointing_at_the_previous_one() {
+        let out = parse("K=1\nK=2\nK=3").expect("should parse");
+        assert_eq!(out.warnings.len(), 2);
+        assert_eq!(
+            (out.warnings[0].line, out.warnings[0].previous_line),
+            (2, 1)
+        );
+        assert_eq!(
+            (out.warnings[1].line, out.warnings[1].previous_line),
+            (3, 2)
+        );
+    }
+
+    // §5.3 の表 / AD-3 — 重複キーの行番号は後勝ちした行。値と行番号が食い違うと、
+    // 出力の行番号を頼りにファイルを開いたユーザーが別の値を見ることになる。
+    #[test]
+    fn duplicate_key_keeps_only_the_last_occurrence_in_file_order() {
+        let out = parse("DUP=1\nOTHER=x\nDUP=2").expect("should parse");
+        let dup: Vec<_> = out.vars.iter().filter(|(k, _)| k == "DUP").collect();
+        assert_eq!(dup.len(), 1, "重複キーは 1 件に畳む");
+        assert_eq!(dup[0].1.value, "2");
+        assert_eq!(dup[0].1.line, 3, "後勝ちした行");
+    }
+
+    // §4.7 — 重複がなければ警告は出ない。
+    #[test]
+    fn no_warning_without_duplicates() {
+        assert!(parse("A=1\nB=2").expect("should parse").warnings.is_empty());
+    }
+
+    // §4.7 / §4.6 — 複数行の値でも、警告は開始行を指す（§5.3 の表）。
+    #[test]
+    fn duplicate_multiline_value_warns_with_the_starting_lines() {
+        let out = parse("K=\"a\nb\"\nK=\"c\nd\"").expect("should parse");
+        assert_eq!(out.warnings.len(), 1);
+        assert_eq!(out.warnings[0].line, 3, "2 つ目の K= が書かれた行");
+        assert_eq!(out.warnings[0].previous_line, 1);
+    }
+
+    // §4.7 — 同じ値での重複でも警告する（書いた人は上の行が効くと思っている）。
+    #[test]
+    fn duplicate_key_with_the_same_value_still_warns() {
+        let out = parse("K=same\nK=same").expect("should parse");
+        assert_eq!(out.warnings.len(), 1, "値が同じでも重複は異常");
     }
 
     #[test]

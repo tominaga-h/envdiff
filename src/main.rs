@@ -63,9 +63,11 @@ fn run(cli: &Cli) -> Result<bool> {
     let a = load(&cli.a)?;
     let b = load(&cli.b)?;
 
-    for w in a.warnings.iter().chain(&b.warnings) {
-        let _ = w; // 警告の出力は Task 4（§4.7）で入れる。
-    }
+    // §4.7: 警告は stderr（人間が読む注意）へ。stdout（機械が読む結果）と分ける
+    // ことで、パイプにも影響しない。警告は終了コードにも影響しない（§3）。
+    // 色付けは Task 9（§6.1）で入れる。
+    warn(&cli.a, &a.warnings);
+    warn(&cli.b, &b.warnings);
 
     let diffs = diff::compare(&a.vars, &b.vars);
     let summary = diff::summarize(&diffs);
@@ -75,6 +77,19 @@ fn run(cli: &Cli) -> Result<bool> {
 
     // §2: --all は表示範囲のオプションであり、終了コードの判定基準を変えない。
     Ok(summary.has_differences())
+}
+
+/// 重複キーの警告を stderr に出す（§4.7）。
+fn warn(path: &Path, warnings: &[parser::Warning]) {
+    for w in warnings {
+        eprintln!(
+            "warning: {}:{}: duplicate key '{}' (overrides value from line {})",
+            path.display(),
+            w.line,
+            w.key,
+            w.previous_line
+        );
+    }
 }
 
 /// ファイルを読んでパースする。エラーは `ファイル名:行番号: メッセージ` の形にする（§4）。
