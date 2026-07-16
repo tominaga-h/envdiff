@@ -2,6 +2,9 @@
 name = "envdiff"
 version = "0.1.0"
 edition = "2024"
+authors = ["tominaga-h"]
+description = "Compare two .env files variable by variable"
+license = "MIT"
 
 [dependencies]
 anyhow = "1.0.103"
