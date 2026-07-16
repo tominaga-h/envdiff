@@ -44,14 +44,15 @@
 
 ## Phase 3: 出力の完成
 
-- [ ] **Task 8** — JSON 出力（§6.2） · S · deps: 6
-- [ ] **Task 9** — stderr の色（`owo-colors`）/ NO_COLOR / 非 TTY（§6.1） · S · deps: 4, 7
-- [ ] **Task 10** — CLI 統合テスト（§8.3） · M · deps: 7, 8, 9
+- [x] **Task 8** — JSON 出力（§6.2） · S · deps: 6
+- [x] **Task 9** — stderr の色（`owo-colors`）/ NO_COLOR / 非 TTY（§6.1） · S · deps: 4, 7
+- [x] **Task 10** — CLI 統合テスト（§8.3） · M · deps: 7, 8, 9
 
 ### ⛳ Checkpoint C: 完成
 
-- [ ] `make check` が通る（fmt / check / clippy / test）
-- [ ] §8.4 が守られている（テーブル出力の文字列一致テストがない）
+- [x] `make check` が通る（fmt / check / clippy / test。112 tests）
+- [x] §8.4 が守られている（テーブル出力の文字列一致テストがない）
+- [x] SPEC の全 § に対応する実装とテストが存在する
 
 ---
 

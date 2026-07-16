@@ -176,14 +176,14 @@ Task 3/4（パーサの難所）はその後に積む。これにより「動く
 
 ### Phase 3: 出力の完成
 
-- [ ] Task 8: JSON 出力（§6.2）
-- [ ] Task 9: stderr の色と NO_COLOR / 非 TTY（§6.1）
-- [ ] Task 10: CLI 統合テスト（§8.3）
+- [x] Task 8: JSON 出力（§6.2）
+- [x] Task 9: stderr の色と NO_COLOR / 非 TTY（§6.1）
+- [x] Task 10: CLI 統合テスト（§8.3）
 
 ### Checkpoint C: 完成
-- [ ] SPEC の全 § に対応する実装とテストが存在する
-- [ ] `make check` が通る（fmt / check / clippy / test）
-- [ ] レビュー可能な状態
+- [x] SPEC の全 § に対応する実装とテストが存在する
+- [x] `make check` が通る（fmt / check / clippy / test）
+- [x] レビュー可能な状態
 
 ---
 
@@ -503,9 +503,9 @@ Task 2 で確定した API の内側を深くする。行分割ではなく文�
 
 ### Checkpoint C（完成）
 
-- [ ] SPEC の全 § に対応する実装とテストが存在する
-- [ ] `make check` が通る（fmt / check / clippy / test）
-- [ ] §8.4 の「意図的にやらないこと」が守られている（テーブルの文字列一致テストがない）
+- [x] SPEC の全 § に対応する実装とテストが存在する
+- [x] `make check` が通る（fmt / check / clippy / test）
+- [x] §8.4 の「意図的にやらないこと」が守られている（テーブルの文字列一致テストがない）
 
 ---
 
