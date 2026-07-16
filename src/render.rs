@@ -5,7 +5,9 @@
 //! 「サマリと凡例を出す」の 4 点。§8.4 によりテーブルの文字列一致テストは書かない。
 
 use crate::diff::{Diff, Status, Summary};
-use comfy_table::{ContentArrangement, Table, presets::UTF8_FULL};
+use comfy_table::{
+    ContentArrangement, Table, modifiers::UTF8_SOLID_INNER_BORDERS, presets::UTF8_FULL,
+};
 use std::path::Path;
 
 /// 不在を示す記号（§6.1）。空文字の値は空セルとして表示され、これとは区別される。
@@ -87,6 +89,8 @@ pub fn render(diffs: &[Diff], summary: &Summary, a: &Path, b: &Path, all: bool) 
         // 罫線付き。折り返しで行の高さが不揃いになっても（§6.1）、行間の罫線で
         // どこまでが 1 変数かが分かる。
         .load_preset(UTF8_FULL)
+        // 内側の罫線を実線にする（既定は点線 `┆` / `╌`）。
+        .apply_modifier(UTF8_SOLID_INNER_BORDERS)
         // 長い値は切り詰めず折り返す（§6.1）。ターミナル幅に応じて調整される。
         .set_content_arrangement(ContentArrangement::Dynamic)
         .set_header(header_row(a, b));
@@ -232,6 +236,7 @@ mod tests {
         let mut table = Table::new();
         table
             .load_preset(UTF8_FULL)
+            .apply_modifier(UTF8_SOLID_INNER_BORDERS)
             .set_header(header_row(Path::new(".env"), Path::new(".env.example")));
         for d in visible(&diffs, false) {
             table.add_row(vec![d.key.as_str(), "3000", "8000", "changed"]);
