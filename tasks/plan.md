@@ -136,8 +136,7 @@ Task 3/4（パーサの難所）はその後に積む。これにより「動く
 - [x] Task 7: テーブル出力（§6.1）
 
 ### Checkpoint A: 最小の縦串が通る
-- [x] `cargo build` が警告なしで通る
-- [x] `cargo test` が全て通る
+- [x] `make check` が通る（fmt / check / clippy / test）
 - [x] 手動確認: 単純な `.env` 2 つを比較してテーブルが出て、exit code が 0/1/2 で返る
 - [x] 手動確認: 出力の並びが A の記載順と一致する（§5.3）
 
@@ -159,8 +158,7 @@ Task 3/4（パーサの難所）はその後に積む。これにより「動く
 
 ### Checkpoint C: 完成
 - [ ] SPEC の全 § に対応する実装とテストが存在する
-- [ ] `cargo clippy -- -D warnings` が通る
-- [ ] `cargo fmt --check` が通る
+- [ ] `make check` が通る（fmt / check / clippy / test）
 - [ ] レビュー可能な状態
 
 ---
@@ -176,7 +174,7 @@ Task 3/4（パーサの難所）はその後に積む。これにより「動く
 - [ ] §7 にないクレートを追加していない
 
 **Verification:**
-- [ ] `cargo build` が通る
+- [ ] `make check` が通る
 - [ ] `cargo tree --depth 1` の直接依存が SPEC §7 の表と一致する
 
 **Dependencies:** None
@@ -209,7 +207,7 @@ Task 3/4（パーサの難所）はその後に積む。これにより「動く
 - [ ] パーサは `eprintln!` を呼ばない（AD-4）
 
 **Verification:**
-- [ ] `cargo test parser::` が通る
+- [ ] `make check` が通る（開発中の絞り込みは `cargo test parser::`）
 - [ ] テスト名が §8.1 の項目名に対応している（`export` 剥がし / `=` 最初の出現 / 不正な行で即停止）
 - [ ] 意図的な確認: 不正な行のあとに正常な行を置いても、後続がパースされないこと
 
@@ -239,7 +237,7 @@ Task 3/4（パーサの難所）はその後に積む。これにより「動く
 - [ ] 順序が決定的（同じ入力で常に同じ順）
 
 **Verification:**
-- [ ] `cargo test diff::` が通る
+- [ ] `make check` が通る（開発中の絞り込みは `cargo test diff::`）
 - [ ] 4 分類それぞれにテストがある
 - [ ] `KEY=`（A）vs キー不在（B）が `only_in_a` になるテストがある
 - [ ] A の記載順が出力順に反映されるテストがある（ソート順なら失敗する並びを使う。例: A に `ZEBRA` を 1 行目、`ALPHA` を 2 行目）
@@ -269,7 +267,7 @@ Task 3/4（パーサの難所）はその後に積む。これにより「動く
 - [ ] 空ファイルがエラーにならない
 
 **Verification:**
-- [ ] `cargo build` が通る
+- [ ] `make check` が通る
 - [ ] 手動確認: 同一ファイルを 2 回渡して exit 0
 - [ ] 手動確認: 存在しないパスを渡して exit 2、メッセージにパスが含まれる
 - [ ] 手動確認: `--all` の有無で exit code が変わらない
@@ -300,7 +298,7 @@ Task 3/4（パーサの難所）はその後に積む。これにより「動く
 - [ ] 長い値は折り返す（切り詰めない）
 
 **Verification:**
-- [ ] `cargo build` が通る
+- [ ] `make check` が通る
 - [ ] 手動確認: §6.1 の例と同じ入力で、同等のテーブルが出る（文字列一致ではなく目視）
 - [ ] 手動確認: `KEY=` と キー不在 が画面上で区別できる
 - [ ] 手動確認: 差分なしで何も出力されない
@@ -318,8 +316,7 @@ Task 3/4（パーサの難所）はその後に積む。これにより「動く
 
 ### Checkpoint A（Task 1, 2, 5, 6, 7 の後）
 
-- [ ] `cargo build` が警告なしで通る
-- [ ] `cargo test` が全て通る
+- [ ] `make check` が通る（fmt / check / clippy / test）
 - [ ] 手動確認: 単純な `.env` 2 つの比較でテーブルが出て exit 1
 - [ ] 手動確認: 出力の並びが A のファイルの記載順と一致する（§5.3）
 - [ ] **人間レビュー: 実際の出力を見て、§5.3 の順序が読みやすいか**（規則自体は確定済み。目視で確かめる機会として残す）
@@ -347,7 +344,7 @@ Task 2 で確定した API の内側を深くする。行分割ではなく文�
 - [ ] 複数行の値の**後ろ**にある変数の行番号が、値の内部の改行分だけ正しく進んでいる
 
 **Verification:**
-- [ ] `cargo test parser::` が通る
+- [ ] `make check` が通る（開発中の絞り込みは `cargo test parser::`）
 - [ ] §8.1 のクォート関連 6 項目すべてにテストがある
 - [ ] EOF 未閉鎖のテストが、エラーメッセージの**行番号が開始行**であることを検証している
 - [ ] 手動確認: 複数行の RSA 秘密鍵を含むファイルがパースできる
@@ -374,7 +371,7 @@ Task 2 で確定した API の内側を深くする。行分割ではなく文�
 - [ ] 警告は stdout ではなく stderr に出る
 
 **Verification:**
-- [ ] `cargo test parser::` が通る
+- [ ] `make check` が通る（開発中の絞り込みは `cargo test parser::`）
 - [ ] 重複キーが「後勝ち + 警告」であるユニットテストがある
 - [ ] 手動確認: `envdiff a b > /dev/null` で警告だけが画面に残る（stdout/stderr 分離）
 - [ ] 手動確認: 重複キーがあり差分がないファイル同士で exit 0
@@ -392,7 +389,7 @@ Task 2 で確定した API の内側を深くする。行分割ではなく文�
 ### Checkpoint B（Task 3, 4 の後）
 
 - [ ] §8.1 の 12 項目すべてにテストが存在し、通る
-- [ ] `cargo test` が全て通る
+- [ ] `make check` が通る
 - [ ] 手動確認: 複数行の RSA 秘密鍵を含む `.env` が比較できる
 - [ ] 手動確認: EOF でクォートが閉じないファイルが、開始行を指すエラーで exit 2
 
@@ -412,7 +409,7 @@ Task 2 で確定した API の内側を深くする。行分割ではなく文�
 - [ ] `--json` でも終了コードの判定が変わらない
 
 **Verification:**
-- [ ] `cargo test` が通る
+- [ ] `make check` が通る
 - [ ] 手動確認: `envdiff --json a b | jq '.diffs[] | select(.status == "only_in_a")'` が動く（§6.2 の例）
 - [ ] 手動確認: `KEY=` が `""`、キー不在が `null` として出る
 
@@ -439,7 +436,7 @@ Task 2 で確定した API の内側を深くする。行分割ではなく文�
 - [ ] stderr が TTY でなければ無効化される（stdout のリダイレクトに引きずられない）
 
 **Verification:**
-- [ ] `cargo build` が通る
+- [ ] `make check` が通る
 - [ ] 手動確認: 端末で warning が色付き
 - [ ] 手動確認: `envdiff a b 2>&1 | cat` で ANSI エスケープが混入しない
 - [ ] 手動確認: `envdiff a b > /dev/null` では stderr が TTY のままなので**色が残る**（判定が stdout に引きずられていないことの確認）
@@ -466,7 +463,7 @@ Task 2 で確定した API の内側を深くする。行分割ではなく文�
 - [ ] テーブル出力の文字列一致テストを書いていない
 
 **Verification:**
-- [ ] `cargo test --test '*'` が通る
+- [ ] `make check` が通る（開発中の絞り込みは `cargo test --test '*'`）
 - [ ] `assert_cmd` / `tempfile` が `[dev-dependencies]` に入っている（本体依存ではない）
 - [ ] テストコードを grep して、テーブル行の文字列リテラル比較がないことを確認
 
@@ -483,9 +480,7 @@ Task 2 で確定した API の内側を深くする。行分割ではなく文�
 ### Checkpoint C（完成）
 
 - [ ] SPEC の全 § に対応する実装とテストが存在する
-- [ ] `cargo test` が全て通る
-- [ ] `cargo clippy -- -D warnings` が通る
-- [ ] `cargo fmt --check` が通る
+- [ ] `make check` が通る（fmt / check / clippy / test）
 - [ ] §8.4 の「意図的にやらないこと」が守られている（テーブルの文字列一致テストがない）
 
 ---

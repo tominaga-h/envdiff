@@ -2,6 +2,19 @@
 
 詳細（受け入れ基準・検証手順・設計判断）は [plan.md](./plan.md) を参照。
 
+## 検証コマンド
+
+タスク完了の判定は **`make check`** で行う（`cargo test` 単体では使わない）。
+`make check` は fmt(自動修正) → check → clippy → test の 4 段を回すため、
+テストだけでなくフォーマットと lint の破れも同時に検出できる。中身は
+`githooks/pre-push.sh` で、pre-push フックと同一（`make install-hooks` で導入）。
+
+| コマンド | 用途 |
+| --- | --- |
+| `make check` | 完了判定。CI と pre-push と同じ内容 |
+| `cargo test parser::` 等 | 開発中の絞り込み実行（`make check` の代わりにはしない） |
+| `cargo build` | 手動確認前にバイナリを更新する（`make check` は `cargo check` のため実行ファイルを更新しない） |
+
 ## Phase 1: 骨格と最小の縦串
 
 - [x] **Task 1** — Cargo.toml 依存追加 + モジュール骨格（§7） · S · deps: なし
@@ -12,7 +25,7 @@
 
 ### ⛳ Checkpoint A
 
-- [x] `cargo build` が警告なしで通る / `cargo test` が全て通る（46 tests）
+- [x] `make check` が通る（fmt / check / clippy / test。48 tests）
 - [x] 手動確認: `.env` 2 つを比較してテーブルが出て exit 1
 - [x] 手動確認: 出力の並びが A の記載順と一致する（§5.3）
 - [x] **人間レビュー: 実際の出力を見て §5.3 の順序が読みやすいか** ← 未実施（ハヤト待ち）
@@ -25,6 +38,7 @@
 ### ⛳ Checkpoint B
 
 - [ ] §8.1 の 12 項目すべてにテストが存在し、通る
+- [ ] `make check` が通る
 - [ ] 手動確認: 複数行の RSA 秘密鍵を含む `.env` が比較できる
 - [ ] 手動確認: EOF 未閉鎖のクォートが、**開始行**を指すエラーで exit 2
 
@@ -36,7 +50,7 @@
 
 ### ⛳ Checkpoint C: 完成
 
-- [ ] `cargo test` / `cargo clippy -- -D warnings` / `cargo fmt --check` が通る
+- [ ] `make check` が通る（fmt / check / clippy / test）
 - [ ] §8.4 が守られている（テーブル出力の文字列一致テストがない）
 
 ---
