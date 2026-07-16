@@ -85,3 +85,14 @@ is not. This asymmetry is deliberate.
   (`feat:`, `test(cli):`); everything after the colon is Japanese. The body explains *why*, same as
   doc comments. Commits before 456aea1 are English, from when this file said subjects should be
   English; leave them.
+- **Reply to the user in Japanese.** This is about the conversation, not the artifacts: chat responses,
+  explanations, and questions are Japanese, while the language of what gets committed — source comments
+  and docs (Japanese), CLI output and README.md (English) — stays exactly as the first item above
+  says. Answering in Japanese never licenses translating an artifact.
+- **If you ask the user a question, stop and wait for the answer.** Do not guess it, do not fill it in
+  from context, and do not announce "proceeding with X" as a way of extracting confirmation. Asking and
+  then supplying your own answer is worse than never asking: it looks like agreement was reached when it
+  wasn't. This applies with full force when you think the answer is obvious — if it were obvious you
+  wouldn't have asked. It also applies to a re-answer you find ambiguous: ask again rather than pick a
+  reading. Nothing but a message from the user counts as an answer — not a background-task result, not
+  your own earlier summary of what they "probably" meant.
