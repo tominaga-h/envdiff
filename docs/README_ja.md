@@ -8,9 +8,42 @@
 差分に現れ、本当に知りたい「どの環境変数が違うのか」が埋もれてしまう。envdiff は
 ファイルを環境変数の集合として解釈し、キー単位で比較する。
 
-![demo](assets/demo.png)
+![demo](../assets/demo.png)
 
 ## インストール
+
+### ビルド済みバイナリをダウンロードする
+
+各[リリース](https://github.com/tominaga-h/envdiff/releases)にビルド済みバイナリを添付している。
+Rust ツールチェインは不要。
+
+| OS | アーキテクチャ | アセット |
+| --- | --- | --- |
+| macOS | x86_64 | `envdiff-x86_64-apple-darwin.tar.gz` |
+| macOS | aarch64（Apple Silicon） | `envdiff-aarch64-apple-darwin.tar.gz` |
+| Linux | x86_64 | `envdiff-x86_64-unknown-linux-gnu.tar.gz` |
+| Linux | aarch64 | `envdiff-aarch64-unknown-linux-gnu.tar.gz` |
+| Windows | x86_64 | `envdiff-x86_64-pc-windows-msvc.zip` |
+| Windows | aarch64 | `envdiff-aarch64-pc-windows-msvc.zip` |
+
+macOS と Linux では、自分の環境に合うアセットをダウンロードして展開し、`PATH` の通った
+場所に置く：
+
+```sh
+curl -sSfL https://github.com/tominaga-h/envdiff/releases/latest/download/envdiff-aarch64-apple-darwin.tar.gz | tar xz
+sudo mv envdiff /usr/local/bin/
+```
+
+macOS では、コード署名をしていないため Gatekeeper にブロックされることがある。その場合は
+quarantine 属性を外す：
+
+```sh
+xattr -d com.apple.quarantine /usr/local/bin/envdiff
+```
+
+Windows では `.zip` を展開し、`envdiff.exe` を `PATH` の通ったディレクトリに置く。
+
+### ソースからビルドする
 
 ```sh
 cargo install --path .
