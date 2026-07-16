@@ -72,10 +72,15 @@ fn run(cli: &Cli) -> Result<bool> {
     let diffs = diff::compare(&a.vars, &b.vars);
     let summary = diff::summarize(&diffs);
 
-    // JSON 出力は Task 8（§6.2）で入れる。
-    render::render(&diffs, &summary, &cli.a, &cli.b, cli.all);
+    // §2: --all（表示範囲）と --json（出力形式）は直交する。
+    if cli.json {
+        json::render(&diffs, &summary, &cli.a, &cli.b, cli.all);
+    } else {
+        render::render(&diffs, &summary, &cli.a, &cli.b, cli.all);
+    }
 
     // §2: --all は表示範囲のオプションであり、終了コードの判定基準を変えない。
+    // §6.2: --json も同じく終了コードの判定を変えない。
     Ok(summary.has_differences())
 }
 
