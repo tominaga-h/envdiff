@@ -13,6 +13,39 @@ them by key.
 
 ## Install
 
+### Download a prebuilt binary
+
+Prebuilt binaries are attached to every [release](https://github.com/tominaga-h/envdiff/releases).
+No Rust toolchain is required.
+
+| OS | Architecture | Asset |
+| --- | --- | --- |
+| macOS | x86_64 | `envdiff-x86_64-apple-darwin.tar.gz` |
+| macOS | aarch64 (Apple Silicon) | `envdiff-aarch64-apple-darwin.tar.gz` |
+| Linux | x86_64 | `envdiff-x86_64-unknown-linux-gnu.tar.gz` |
+| Linux | aarch64 | `envdiff-aarch64-unknown-linux-gnu.tar.gz` |
+| Windows | x86_64 | `envdiff-x86_64-pc-windows-msvc.zip` |
+| Windows | aarch64 | `envdiff-aarch64-pc-windows-msvc.zip` |
+
+On macOS and Linux, download the asset for your platform, extract it, and put the
+binary somewhere on your `PATH`:
+
+```sh
+curl -sSfL https://github.com/tominaga-h/envdiff/releases/latest/download/envdiff-aarch64-apple-darwin.tar.gz | tar xz
+sudo mv envdiff /usr/local/bin/
+```
+
+On macOS, Gatekeeper may block the binary because it is not code-signed. Clear the
+quarantine attribute if that happens:
+
+```sh
+xattr -d com.apple.quarantine /usr/local/bin/envdiff
+```
+
+On Windows, extract the `.zip` and place `envdiff.exe` in a directory on your `PATH`.
+
+### Build from source
+
 ```sh
 cargo install --path .
 ```
