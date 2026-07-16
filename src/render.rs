@@ -33,7 +33,7 @@ fn value_cell(value: Option<&str>) -> &str {
 ///
 /// `same` はデフォルトでは出力しない。100 個中 3 個違うときに 97 行のノイズを
 /// 読ませないため。`--all` で含める。
-pub fn visible<'a>(diffs: &'a [Diff], all: bool) -> Vec<&'a Diff> {
+pub fn visible(diffs: &[Diff], all: bool) -> Vec<&Diff> {
     diffs
         .iter()
         .filter(|d| all || d.status != Status::Same)
