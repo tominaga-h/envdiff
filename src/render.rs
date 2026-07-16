@@ -331,14 +331,18 @@ mod tests {
         );
     }
 
-    // §6.1 — 非 TTY ではセル文字列が値と完全に同一（ANSI が混ざらない）。
-    // changed 行であっても、強調が有効でなければ素の値が出る。
+    // §6.1 — changed 行のセルは、強調の有無にかかわらず値そのものを運ぶ。
+    //
+    // 強調が有効かどうかは端末に依存する（TTY か / `NO_COLOR` か）。テストは
+    // どちらの環境でも走るため、ANSI の有無を前提にしてはいけない。ここで
+    // 主張するのは「ANSI を取り除けば元の値が残る」＝ 強調が値を書き換えない
+    // ことであり、これはどちらの環境でも真になる。
     #[test]
-    fn changed_cells_carry_the_raw_values_when_emphasis_is_disabled() {
+    fn changed_cells_carry_the_values_through_the_emphasis() {
         let d = diff("PORT", Status::Changed, Some("3000"), Some("8000"));
         let (a, b) = value_cells(&d);
-        assert_eq!(a, "3000");
-        assert_eq!(b, "8000");
+        assert_eq!(strip_ansi(&a), "3000");
+        assert_eq!(strip_ansi(&b), "8000");
     }
 
     // §6.1 — セルに ANSI が入っても桁が揃う。
@@ -360,7 +364,25 @@ mod tests {
         );
     }
 
-    /// テーブルを組んで各行の表示幅を返す。ANSI は幅に数えない。
+    /// ANSI エスケープを取り除く。
+    ///
+    /// 端末が実際に表示する文字列を得るための処理。エスケープは画面上で
+    /// 幅を持たないため、桁揃えを見るテストは必ずこれを通す。
+    fn strip_ansi(s: &str) -> String {
+        let mut out = String::new();
+        let mut in_escape = false;
+        for c in s.chars() {
+            match c {
+                '\x1b' => in_escape = true,
+                'm' if in_escape => in_escape = false,
+                _ if in_escape => {}
+                _ => out.push(c),
+            }
+        }
+        out
+    }
+
+    /// テーブルを組んで各行の**表示幅**を返す。
     fn build_row_widths(a_val: &str, b_val: &str) -> Vec<usize> {
         let d = diff("PORT", Status::Changed, Some(a_val), Some(b_val));
         // value_cells を通さず直接セルに入れる（強調の有無ではなく
@@ -380,25 +402,18 @@ mod tests {
         table
             .to_string()
             .lines()
-            .map(|line| {
-                // ANSI を除いた表示幅を数える。
-                let mut width = 0;
-                let mut in_escape = false;
-                for c in line.chars() {
-                    match c {
-                        '\x1b' => in_escape = true,
-                        'm' if in_escape => in_escape = false,
-                        _ if in_escape => {}
-                        _ => width += 1,
-                    }
-                }
-                width
-            })
+            .map(|line| strip_ansi(line).chars().count())
             .collect()
     }
 
     // §6.1 — 実際の描画経路（value_cells 経由）でも行の幅が揃う。
-    // 罫線行とデータ行がすべて同じ幅であることは、テーブルが壊れていないことの定義。
+    // 罫線行とデータ行がすべて同じ**表示幅**であることが、テーブルが壊れて
+    // いないことの定義。
+    //
+    // 幅は必ず ANSI を除いて数える。強調が有効な端末では changed 行のセルに
+    // エスケープが入るが、それは画面上で幅を持たない。`chars().count()` で
+    // 数えると、comfy-table が犯していたのと同じ誤り（エスケープを表示文字と
+    // して数える）をテスト側で繰り返すことになり、正しい出力を失敗と判定する。
     #[test]
     fn every_line_of_the_table_has_the_same_display_width() {
         let diffs = [
@@ -415,12 +430,12 @@ mod tests {
         let widths: Vec<usize> = table
             .to_string()
             .lines()
-            .map(|l| l.chars().count())
+            .map(|l| strip_ansi(l).chars().count())
             .collect();
         let first = widths[0];
         assert!(
             widths.iter().all(|w| *w == first),
-            "行ごとに幅が違う（罫線が壊れている）: {widths:?}"
+            "行ごとに表示幅が違う（罫線が壊れている）: {widths:?}"
         );
     }
 
