@@ -5,6 +5,7 @@ mod render;
 
 use anyhow::{Context, Result};
 use clap::Parser;
+use owo_colors::{OwoColorize, Stream};
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
@@ -52,7 +53,12 @@ fn main() -> ExitCode {
             }
         }
         Err(e) => {
-            eprintln!("error: {e:#}");
+            // §6.1: stderr の error は赤。判定は stderr のみを見るため、stdout を
+            // リダイレクトしても色は残る（AD-6）。
+            eprintln!(
+                "{} {e:#}",
+                "error:".if_supports_color(Stream::Stderr, |t| t.red())
+            );
             ExitCode::from(EXIT_ERROR)
         }
     }
@@ -84,11 +90,12 @@ fn run(cli: &Cli) -> Result<bool> {
     Ok(summary.has_differences())
 }
 
-/// 重複キーの警告を stderr に出す（§4.7）。
+/// 重複キーの警告を stderr に出す（§4.7）。ラベルは黄（§6.1）。
 fn warn(path: &Path, warnings: &[parser::Warning]) {
     for w in warnings {
         eprintln!(
-            "warning: {}:{}: duplicate key '{}' (overrides value from line {})",
+            "{} {}:{}: duplicate key '{}' (overrides value from line {})",
+            "warning:".if_supports_color(Stream::Stderr, |t| t.yellow()),
             path.display(),
             w.line,
             w.key,
