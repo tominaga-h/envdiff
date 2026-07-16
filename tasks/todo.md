@@ -64,13 +64,20 @@
 - [x] **Task 11** — SPEC 改訂: §6.1 に「強調」節を追記 + §7 に `similar`（AD-8, AD-10） · S · deps: なし · ハヤト承認済み
 - [x] **Task 12** — `highlight.rs`: 強調範囲を返す純粋関数（AD-10, AD-12） · M · deps: 11
 - [x] **Task 13** — `render.rs`: 値セルに太字を被せる + stdout の TTY/NO_COLOR（AD-9, AD-11） · M · deps: 12
-- [ ] **Task 14** — CLI 統合テスト: 非 TTY / NO_COLOR で ANSI が出ない（§8.3） · S · deps: 13
-  - 当初の想定に加えて、**既存の `table_output_has_no_ansi_escapes` を環境非依存にする**。
-    現状は環境変数を制御せず親から継承するため、`FORCE_COLOR` が立った環境では落ちる
+- [x] **Task 14** — CLI 統合テスト: 非 TTY / NO_COLOR で ANSI が出ない（§8.3） · S · deps: 13
+  - ハーネス（`envdiff()`）が色関連の 4 変数を断つようにした。テストが起動元の端末に
+    左右されなくなり、`FORCE_COLOR` / `CLICOLOR_FORCE` / `NO_COLOR` / `CLICOLOR` の
+    どの環境でも通る
+  - 強調の有効化には `IGNORE_IS_TERMINAL` を使う。force 系は使えない —
+    `supports-color` は force を最優先で判定し `NO_COLOR` を読まずに返すため、
+    force を使うと「`NO_COLOR` が効くか」が原理的に検証できない
+  - 4 本すべてに「強調が実際に出ていること」のガードを置いた。これがないと
+    強調が出ない環境で**何も検証しないまま通る**（`EMPHASIS_ON` を無効な変数に
+    差し替えて 4 本とも落ちることを確認済み）
 
 ### ⛳ Checkpoint D: ハイライトが動く
 
-- [x] `make check` が通る（fmt / check / clippy / test。131 tests）
+- [x] `make check` が通る（fmt / check / clippy / test。135 tests）
 - [x] 手動確認: 長い `DATABASE_URL` の差分で、**変わった箇所だけ**が太字になる
 - [x] 手動確認: `envdiff a b | cat` で ANSI が出ない（非 TTY）
 - [x] 手動確認: `NO_COLOR=1 envdiff a b` で ANSI が出ない
