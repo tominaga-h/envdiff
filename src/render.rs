@@ -117,15 +117,13 @@ fn header_row(a: &Path, b: &Path) -> Vec<String> {
     ]
 }
 
-/// テーブル・サマリ・凡例を stdout に出す（§6.1）。
+/// 行からテーブルを組む（§6.1）。
 ///
-/// 差分がなく `--all` もなければ何も出力しない。テーブルに色は付けない（§6.1）。
-pub fn render(diffs: &[Diff], summary: &Summary, a: &Path, b: &Path, all: bool) {
-    let rows = visible(diffs, all);
-    if rows.is_empty() {
-        return;
-    }
-
+/// `render` から分けてあるのは、セルに ANSI が入ったときの桁揃えをテストする
+/// ため。`comfy-table` は `custom_styling` feature がなければエスケープを
+/// ただの文字として数え、太字を入れた行だけ幅が狂う（Cargo.toml のコメント）。
+/// print と組み立てが同じ関数にあると、この回帰を検出する術がない。
+fn build_table(rows: &[&Diff], a: &Path, b: &Path) -> Table {
     let mut table = Table::new();
     table
         // 罫線付き。折り返しで行の高さが不揃いになっても（§6.1）、行間の罫線で
@@ -146,8 +144,19 @@ pub fn render(diffs: &[Diff], summary: &Summary, a: &Path, b: &Path, all: bool) 
             status_label(d.status).to_string(),
         ]);
     }
+    table
+}
 
-    println!("{table}");
+/// テーブル・サマリ・凡例を stdout に出す（§6.1）。
+///
+/// 差分がなく `--all` もなければ何も出力しない。テーブルに色は付けない（§6.1）。
+pub fn render(diffs: &[Diff], summary: &Summary, a: &Path, b: &Path, all: bool) {
+    let rows = visible(diffs, all);
+    if rows.is_empty() {
+        return;
+    }
+
+    println!("{}", build_table(&rows, a, b));
     println!();
     println!("{}", summary_line(summary));
     println!("{}", legend_line(a, b));
@@ -330,6 +339,89 @@ mod tests {
         let (a, b) = value_cells(&d);
         assert_eq!(a, "3000");
         assert_eq!(b, "8000");
+    }
+
+    // §6.1 — セルに ANSI が入っても桁が揃う。
+    //
+    // これは見た目のテストではなく、罫線が壊れないことの回帰テスト（§8.4 の対象外）。
+    // `comfy-table` の `custom_styling` feature がないと、エスケープシーケンスを
+    // ただの文字として数えて太字の行だけ幅が広がり、罫線が破綻する。
+    //
+    // 通常のテストは非 TTY で走るため強調が無効になり、この経路を一度も通らない。
+    // ここでは ANSI を直接セルに入れて、feature が効いていることを確かめる。
+    #[test]
+    fn ansi_in_a_cell_does_not_break_column_alignment() {
+        // 中身は同じ「3000」だが、片方は太字の ANSI 付き。
+        let plain = build_row_widths("3000", "8000");
+        let bolded = build_row_widths("\x1b[1m3\x1b[0m000", "\x1b[1m8\x1b[0m000");
+        assert_eq!(
+            plain, bolded,
+            "ANSI の有無で列幅が変わっている（custom_styling feature が効いていない）"
+        );
+    }
+
+    /// テーブルを組んで各行の表示幅を返す。ANSI は幅に数えない。
+    fn build_row_widths(a_val: &str, b_val: &str) -> Vec<usize> {
+        let d = diff("PORT", Status::Changed, Some(a_val), Some(b_val));
+        // value_cells を通さず直接セルに入れる（強調の有無ではなく
+        // ANSI の扱いを見たいため）。
+        let mut table = Table::new();
+        table
+            .load_preset(UTF8_FULL)
+            .apply_modifier(UTF8_SOLID_INNER_BORDERS)
+            .set_content_arrangement(ContentArrangement::Dynamic)
+            .set_header(header_row(Path::new("a.env"), Path::new("b.env")));
+        table.add_row(vec![
+            d.key.clone(),
+            a_val.to_string(),
+            b_val.to_string(),
+            status_label(d.status).to_string(),
+        ]);
+        table
+            .to_string()
+            .lines()
+            .map(|line| {
+                // ANSI を除いた表示幅を数える。
+                let mut width = 0;
+                let mut in_escape = false;
+                for c in line.chars() {
+                    match c {
+                        '\x1b' => in_escape = true,
+                        'm' if in_escape => in_escape = false,
+                        _ if in_escape => {}
+                        _ => width += 1,
+                    }
+                }
+                width
+            })
+            .collect()
+    }
+
+    // §6.1 — 実際の描画経路（value_cells 経由）でも行の幅が揃う。
+    // 罫線行とデータ行がすべて同じ幅であることは、テーブルが壊れていないことの定義。
+    #[test]
+    fn every_line_of_the_table_has_the_same_display_width() {
+        let diffs = [
+            diff(
+                "DATABASE_URL",
+                Status::Changed,
+                Some("postgres://user@localhost:5432/appdb"),
+                Some("postgres://user@db.prod.internal:5432/appdb"),
+            ),
+            diff("SECRET", Status::OnlyInA, Some("only-in-a"), None),
+        ];
+        let rows = visible(&diffs, false);
+        let table = build_table(&rows, Path::new("a.env"), Path::new("b.env"));
+        let widths: Vec<usize> = table
+            .to_string()
+            .lines()
+            .map(|l| l.chars().count())
+            .collect();
+        let first = widths[0];
+        assert!(
+            widths.iter().all(|w| *w == first),
+            "行ごとに幅が違う（罫線が壊れている）: {widths:?}"
+        );
     }
 
     // §6.1 — 凡例は A/B が何を指すかを示す。
