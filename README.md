@@ -205,14 +205,38 @@ line order, then B-only keys in B's line order.
 You read a diff and then open the file to fix it — matching order lets you follow
 both top to bottom. Sorting alphabetically throws away "where do I look?".
 
-## Colors
+## Emphasis and color
 
-The table is never colored. `STATUS` already says `only in B`; color adds
-nothing, and red/green would imply "bad/good" — which is envdiff deciding for you
-which differences matter.
+On `changed` rows, the parts of the value that actually differ are **bold**, and
+colored — red on the A side, green on the B side. Everything the two values share
+is left alone.
 
-Warnings and errors on stderr *are* colored, since drawing your eye is the whole
-job there. Respects `NO_COLOR`, and turns off when stderr isn't a TTY.
+```
+DATABASE_URL │ postgres://localhost:5432/db │ postgres://db.prod:5432/db
+                          ~~~~~~~~~                      ~~~~~~~
+                          red + bold                     green + bold
+```
+
+`STATUS` tells you *that* a variable changed; this tells you *where*. When only
+the host inside a 40-character `DATABASE_URL` differs, that's the part you came
+to see.
+
+Only `changed` rows get it. On `only in A` / `only in B` there is no other side
+to compare against, so "which part changed" isn't defined — the key is missing
+outright, and `STATUS` already says so. `same` rows have nothing to mark.
+
+Bold and color land on exactly the same characters, so the color is not carrying
+information the bold doesn't already carry — it's there to make the A/B split
+easier to read. They're both applied because they disappear under different
+conditions: color is lost through a pipe or under `NO_COLOR`, bold is lost in
+fonts without a bold weight, and red/green is lost to color vision deficiency.
+Whichever one survives, "which part changed" still reads.
+
+Respects `NO_COLOR`, and turns off when stdout isn't a TTY — checked against
+stdout, independently of stderr. `--json` never contains ANSI.
+
+Warnings and errors on stderr are colored too, since drawing your eye is the
+whole job there. That's checked against stderr, and is unchanged from v1.0.0.
 
 ## Development
 

@@ -1,6 +1,6 @@
 [package]
 name = "envdiff"
-version = "1.0.0"
+version = "1.1.0"
 edition = "2024"
 rust-version = "1.85"
 authors = ["tominaga-h"]
@@ -13,10 +13,15 @@ categories = ["command-line-utilities", "development-tools"]
 [dependencies]
 anyhow = "1.0.103"
 clap = { version = "4.6.2", features = ["derive"] }
-comfy-table = "7.2.2"
+# custom_styling: 太字を入れたセル（§6.1 の「強調」）の幅を ANSI 抜きで数える。
+# 無効にすると comfy-table はエスケープシーケンスを表示文字として数え、
+# 強調のある行だけ列幅が広がって罫線が破綻する。外さないこと。
+# render.rs の ansi_in_a_cell_does_not_break_column_alignment が回帰を検出する。
+comfy-table = { version = "7.2.2", features = ["custom_styling"] }
 owo-colors = { version = "4.3.0", features = ["supports-colors"] }
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.150"
+similar = "3.1.1"
 
 [dev-dependencies]
 assert_cmd = "2.2.2"

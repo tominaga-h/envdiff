@@ -17,16 +17,47 @@ fn write(dir: &TempDir, name: &str, content: &str) -> std::path::PathBuf {
     path
 }
 
+/// テスト対象のバイナリ。**色の判定に効く環境変数を断ってから**起動する。
+///
+/// これらを継承すると、テストの結果がテストを走らせた端末に左右される。
+/// `FORCE_COLOR` が立った環境では検出が上書きされ、`assert_cmd` がパイプで
+/// 起動している（＝非 TTY）にもかかわらず ANSI が出て、
+/// `table_output_has_no_ansi_escapes` が落ちる。
+///
+/// 断ち切った上で、CLI テストは常に**非 TTY**の条件で走る（`assert_cmd` は
+/// 標準出力をパイプで受けるため）。§6.1 の「TTY でなければ無効化する」が
+/// 効いている状態であり、ANSI は出ない。
 fn envdiff() -> Command {
-    Command::cargo_bin("envdiff").expect("バイナリがビルドされていること")
+    let mut cmd = Command::cargo_bin("envdiff").expect("バイナリがビルドされていること");
+    cmd.env_remove("FORCE_COLOR")
+        .env_remove("CLICOLOR_FORCE")
+        .env_remove("NO_COLOR")
+        .env_remove("CLICOLOR");
+    cmd
 }
+
+/// 強調が有効になる環境（§6.1）。
+///
+/// `IGNORE_IS_TERMINAL` は TTY 判定**だけ**を迂回する。`FORCE_COLOR` /
+/// `CLICOLOR_FORCE` は使わない — `supports-color` はそれらを最優先で判定し、
+/// `NO_COLOR` を評価しないまま色を出す。force はそういう定義のものであり、
+/// それを使うと「`NO_COLOR` が効くか」を検証できなくなる。
+const EMPHASIS_ON: [(&str, &str); 2] = [("IGNORE_IS_TERMINAL", "1"), ("COLORTERM", "truecolor")];
 
 /// 引数を渡して実行し、(exit code, stdout, stderr) を返す。
 fn run(args: &[&Path]) -> (i32, String, String) {
-    let out = envdiff()
-        .args(args)
-        .output()
-        .expect("プロセスを起動できること");
+    run_with_env(args, &[])
+}
+
+/// 環境変数を指定して実行する。`envdiff()` が断った変数を、テストが意図して
+/// 立て直すための入口（§6.1 の `NO_COLOR` の検証に使う）。
+fn run_with_env(args: &[&Path], env: &[(&str, &str)]) -> (i32, String, String) {
+    let mut cmd = envdiff();
+    cmd.args(args);
+    for (k, v) in env {
+        cmd.env(k, v);
+    }
+    let out = cmd.output().expect("プロセスを起動できること");
     (
         out.status.code().expect("シグナルで死んでいないこと"),
         String::from_utf8(out.stdout).expect("stdout が UTF-8"),
@@ -317,4 +348,133 @@ fn table_output_has_no_ansi_escapes() {
 
     let (_, stdout, _) = run(&[&a, &b]);
     assert!(!stdout.contains('\u{1b}'), "stdout に ANSI を出さない");
+}
+
+// §6.1 — `NO_COLOR` が設定されていれば強調を無効化する。
+//
+// `assert_cmd` は常に非 TTY なので、上のテストは「非 TTY だから出ない」を
+// 見ているにすぎず、`NO_COLOR` の実装が壊れても気付けない。
+//
+// ここでは `IGNORE_IS_TERMINAL` で **TTY 判定だけ**を迂回し、他の条件は
+// 素のままにして強調が出る状態を作る。その上で `NO_COLOR` を足すと消えることを
+// 確かめる。`FORCE_COLOR` / `CLICOLOR_FORCE` は使えない — `supports-color` は
+// force を最優先で判定し、`NO_COLOR` を評価しないまま色を出す。それは
+// force の定義どおりの挙動であって、§6.1 が言う `NO_COLOR` の話ではない。
+#[test]
+fn no_color_disables_the_emphasis() {
+    let dir = TempDir::new().expect("一時ディレクトリ");
+    let a = write(&dir, "a.env", "PORT=3000\n");
+    let b = write(&dir, "b.env", "PORT=8000\n");
+
+    // 前提: TTY 判定さえ通れば強調は出る。
+    // これが出ないなら下の assert は何も検証していないので、まずここで固定する。
+    let (_, emphasized, _) = run_with_env(&[&a, &b], &EMPHASIS_ON);
+    assert!(
+        emphasized.contains('\u{1b}'),
+        "TTY 相当の環境で強調が出ること — 出ないならこのテストは無意味: {emphasized:?}"
+    );
+
+    // 本題: NO_COLOR を足すと消える。
+    let mut with_no_color = EMPHASIS_ON.to_vec();
+    with_no_color.push(("NO_COLOR", "1"));
+    let (_, suppressed, _) = run_with_env(&[&a, &b], &with_no_color);
+    assert!(
+        !suppressed.contains('\u{1b}'),
+        "NO_COLOR が設定されていれば ANSI を出さない（§6.1）"
+    );
+}
+
+// §6.1 — 強調は値を書き換えない。
+//
+// 強調が有効なときも、ANSI を取り除けば元の値がそのまま残る。
+// 太字の見え方ではなく「値が壊れていないこと」を主張する（§8.4）。
+#[test]
+fn emphasis_does_not_alter_the_values_it_wraps() {
+    let dir = TempDir::new().expect("一時ディレクトリ");
+    let a = write(&dir, "a.env", "URL=postgres://localhost:5432/db\n");
+    let b = write(&dir, "b.env", "URL=postgres://db.prod:5432/db\n");
+
+    let (_, stdout, _) = run_with_env(&[&a, &b], &EMPHASIS_ON);
+
+    // 強調が実際に出ていること。これがないと「強調が無効だから値が無傷」でも
+    // 通ってしまい、このテストは何も検証しない。
+    assert!(
+        stdout.contains('\u{1b}'),
+        "強調が出ていること — 出ていなければ以下の assert は無意味"
+    );
+
+    let plain = strip_ansi(&stdout);
+    assert!(
+        plain.contains("postgres://localhost:5432/db"),
+        "A の値が原形のまま出ること: {plain}"
+    );
+    assert!(
+        plain.contains("postgres://db.prod:5432/db"),
+        "B の値が原形のまま出ること: {plain}"
+    );
+}
+
+// §6.2 — `--json` は「整形を一切適用しない」。強調が有効な端末でも ANSI を出さない。
+//
+// `json.rs` は `render::visible()` しか借りておらず強調の経路に触れないが、
+// それは構造上の話であって契約ではない。契約として固定する。
+#[test]
+fn json_has_no_ansi_escapes_even_where_the_table_would_be_emphasized() {
+    let dir = TempDir::new().expect("一時ディレクトリ");
+    let a = write(&dir, "a.env", "PORT=3000\n");
+    let b = write(&dir, "b.env", "PORT=8000\n");
+
+    // 同じ環境でテーブルなら強調が出る、ということを先に固定する。
+    // これがないと「この環境では元々強調が出ない」場合に何も検証しないまま通る。
+    let (_, table, _) = run_with_env(&[&a, &b], &EMPHASIS_ON);
+    assert!(
+        table.contains('\u{1b}'),
+        "この環境ではテーブルに強調が出ること — 出ないなら以下は無意味"
+    );
+
+    // 本題: 同じ環境でも --json には出ない。
+    let (_, stdout, _) = run_with_env(&[Path::new("--json"), &a, &b], &EMPHASIS_ON);
+    assert!(
+        !stdout.contains('\u{1b}'),
+        "--json に ANSI を出さない（§6.2）"
+    );
+    // JSON として壊れていないこと（ANSI が値に混入していれば parse が壊れる）。
+    let v: Value = serde_json::from_str(&stdout).expect("JSON として読めること");
+    assert_eq!(v["diffs"][0]["a"], "3000");
+    assert_eq!(v["diffs"][0]["b"], "8000");
+}
+
+// §3 — 強調は終了コードに影響しない。
+#[test]
+fn emphasis_does_not_change_the_exit_code() {
+    let dir = TempDir::new().expect("一時ディレクトリ");
+    let a = write(&dir, "a.env", "PORT=3000\n");
+    let b = write(&dir, "b.env", "PORT=8000\n");
+
+    let (emphasized_code, emphasized_out, _) = run_with_env(&[&a, &b], &EMPHASIS_ON);
+    let (plain_code, _, _) = run(&[&a, &b]);
+    assert!(
+        emphasized_out.contains('\u{1b}'),
+        "強調が出ている状態で比べること — 出ていなければ同じ経路を 2 回通しただけ"
+    );
+    assert_eq!(emphasized_code, 1, "差分があれば 1（§3）");
+    assert_eq!(
+        emphasized_code, plain_code,
+        "強調の有無で終了コードが変わらない"
+    );
+}
+
+/// ANSI エスケープを取り除く。
+fn strip_ansi(s: &str) -> String {
+    let mut out = String::new();
+    let mut in_escape = false;
+    for c in s.chars() {
+        match c {
+            '\u{1b}' => in_escape = true,
+            'm' if in_escape => in_escape = false,
+            _ if in_escape => {}
+            _ => out.push(c),
+        }
+    }
+    out
 }

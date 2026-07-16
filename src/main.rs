@@ -1,4 +1,5 @@
 mod diff;
+mod highlight;
 mod json;
 mod parser;
 mod render;

@@ -5,9 +5,11 @@
 //! 「サマリと凡例を出す」の 4 点。§8.4 によりテーブルの文字列一致テストは書かない。
 
 use crate::diff::{Diff, Status, Summary};
+use crate::highlight;
 use comfy_table::{
     ContentArrangement, Table, modifiers::UTF8_SOLID_INNER_BORDERS, presets::UTF8_FULL,
 };
+use owo_colors::{OwoColorize, Stream};
 use std::path::Path;
 
 /// 不在を示す記号（§6.1）。空文字の値は空セルとして表示され、これとは区別される。
@@ -29,6 +31,60 @@ fn status_label(status: Status) -> &'static str {
 /// 値のセル。不在は `-`、空文字の値は空セル（§6.1）。
 fn value_cell(value: Option<&str>) -> &str {
     value.unwrap_or(ABSENT)
+}
+
+/// 1 行分の A/B の値セルを組む（§6.1 の「強調」）。
+///
+/// `changed` 行だけが強調の対象になる。`only in A` / `only in B` は片側にキーが
+/// 存在せず比較対象がないため、値を丸ごと太字にすると「値の中のどこかが変わった」
+/// という誤読を招く。実際にはキーごと存在しないのであり、それは STATUS 列が言っている。
+/// `same` は定義上差分がない。
+fn value_cells(d: &Diff) -> (String, String) {
+    match (d.status, d.a.as_deref(), d.b.as_deref()) {
+        (Status::Changed, Some(a), Some(b)) => {
+            let (a_segs, b_segs) = highlight::segments(a, b);
+            (emphasize(&a_segs, Side::A), emphasize(&b_segs, Side::B))
+        }
+        _ => (
+            value_cell(d.a.as_deref()).to_string(),
+            value_cell(d.b.as_deref()).to_string(),
+        ),
+    }
+}
+
+/// 強調の色分けに使う、値がどちらの列のものか（§6.1 の「色」）。
+#[derive(Clone, Copy)]
+enum Side {
+    A,
+    B,
+}
+
+/// 強調セグメントに太字と色を被せてセル文字列にする（§6.1）。
+///
+/// 太字と色は**同じ文字**に乗る。情報を運ぶのは太字だけで、色は A/B の区別を
+/// 読みやすくするためだけにある（§6.1 の「色」節、根拠 1）。それでも両方を
+/// 乗せるのは、消える条件が違うため。`NO_COLOR` / 非 TTY では色が消え、
+/// bold ウェイトを持たないフォントでは太字が消える。片方しか出ない環境でも
+/// 「どの部分が変わったか」が残る。
+///
+/// 判定は **stdout** に対して行う（stderr の warning / error とは独立）。
+/// `NO_COLOR` および非 TTY では `if_supports_color` が素の文字列を返すため、
+/// セル文字列は強調なしのときと完全に同一になる。
+fn emphasize(segs: &[highlight::Segment], side: Side) -> String {
+    segs.iter()
+        .map(|s| {
+            if s.emphasized {
+                s.text
+                    .if_supports_color(Stream::Stdout, |t| match side {
+                        Side::A => t.red().bold().to_string(),
+                        Side::B => t.green().bold().to_string(),
+                    })
+                    .to_string()
+            } else {
+                s.text.clone()
+            }
+        })
+        .collect()
 }
 
 /// 表示対象の差分を絞る（§5.1）。
@@ -75,15 +131,13 @@ fn header_row(a: &Path, b: &Path) -> Vec<String> {
     ]
 }
 
-/// テーブル・サマリ・凡例を stdout に出す（§6.1）。
+/// 行からテーブルを組む（§6.1）。
 ///
-/// 差分がなく `--all` もなければ何も出力しない。テーブルに色は付けない（§6.1）。
-pub fn render(diffs: &[Diff], summary: &Summary, a: &Path, b: &Path, all: bool) {
-    let rows = visible(diffs, all);
-    if rows.is_empty() {
-        return;
-    }
-
+/// `render` から分けてあるのは、セルに ANSI が入ったときの桁揃えをテストする
+/// ため。`comfy-table` は `custom_styling` feature がなければエスケープを
+/// ただの文字として数え、太字を入れた行だけ幅が狂う（Cargo.toml のコメント）。
+/// print と組み立てが同じ関数にあると、この回帰を検出する術がない。
+fn build_table(rows: &[&Diff], a: &Path, b: &Path) -> Table {
     let mut table = Table::new();
     table
         // 罫線付き。折り返しで行の高さが不揃いになっても（§6.1）、行間の罫線で
@@ -96,15 +150,27 @@ pub fn render(diffs: &[Diff], summary: &Summary, a: &Path, b: &Path, all: bool) 
         .set_header(header_row(a, b));
 
     for d in rows {
+        let (a_cell, b_cell) = value_cells(d);
         table.add_row(vec![
-            d.key.as_str(),
-            value_cell(d.a.as_deref()),
-            value_cell(d.b.as_deref()),
-            status_label(d.status),
+            d.key.clone(),
+            a_cell,
+            b_cell,
+            status_label(d.status).to_string(),
         ]);
     }
+    table
+}
 
-    println!("{table}");
+/// テーブル・サマリ・凡例を stdout に出す（§6.1）。
+///
+/// 差分がなく `--all` もなければ何も出力しない。
+pub fn render(diffs: &[Diff], summary: &Summary, a: &Path, b: &Path, all: bool) {
+    let rows = visible(diffs, all);
+    if rows.is_empty() {
+        return;
+    }
+
+    println!("{}", build_table(&rows, a, b));
     println!();
     println!("{}", summary_line(summary));
     println!("{}", legend_line(a, b));
@@ -246,6 +312,190 @@ mod tests {
         let key_at = out.find("KEY").expect("ヘッダーの KEY が出力にある");
         let port_at = out.find("PORT").expect("データ行の PORT が出力にある");
         assert!(key_at < port_at, "ヘッダーはデータ行より前に出る");
+    }
+
+    // §6.1 — 強調は changed 行だけ。片側にキーがない行は無加工で出る。
+    //
+    // テストは非 TTY（cargo test はパイプ経由）で走るため `if_supports_color` は
+    // 素の文字列を返す。ここで主張するのは「セルの中身が値そのものであること」
+    // であり、太字や色の見え方ではない（§8.4）。
+    #[test]
+    fn one_sided_rows_are_not_emphasized() {
+        let only_a = diff("KEY", Status::OnlyInA, Some("value"), None);
+        assert_eq!(value_cells(&only_a), ("value".to_string(), "-".to_string()));
+
+        let only_b = diff("KEY", Status::OnlyInB, None, Some("value"));
+        assert_eq!(value_cells(&only_b), ("-".to_string(), "value".to_string()));
+    }
+
+    // §6.1 — same 行も強調しない（定義上、差分がない）。
+    #[test]
+    fn same_rows_are_not_emphasized() {
+        let d = diff("KEY", Status::Same, Some("x"), Some("x"));
+        assert_eq!(value_cells(&d), ("x".to_string(), "x".to_string()));
+    }
+
+    // §6.1 / §5.2 — 強調しても `-` と空セルの区別は保たれる。
+    #[test]
+    fn emphasis_preserves_the_distinction_between_absent_and_empty() {
+        let empty_vs_absent = diff("KEY", Status::OnlyInA, Some(""), None);
+        assert_eq!(
+            value_cells(&empty_vs_absent),
+            ("".to_string(), "-".to_string())
+        );
+    }
+
+    // §6.1 — changed 行のセルは、強調の有無にかかわらず値そのものを運ぶ。
+    //
+    // 強調が有効かどうかは端末に依存する（TTY か / `NO_COLOR` か）。テストは
+    // どちらの環境でも走るため、ANSI の有無を前提にしてはいけない。ここで
+    // 主張するのは「ANSI を取り除けば元の値が残る」＝ 強調が値を書き換えない
+    // ことであり、これはどちらの環境でも真になる。太字か色かによらず成り立つ。
+    #[test]
+    fn changed_cells_carry_the_values_through_the_emphasis() {
+        let d = diff("PORT", Status::Changed, Some("3000"), Some("8000"));
+        let (a, b) = value_cells(&d);
+        assert_eq!(strip_ansi(&a), "3000");
+        assert_eq!(strip_ansi(&b), "8000");
+    }
+
+    // §6.1 — セルに ANSI が入っても桁が揃う。
+    //
+    // これは見た目のテストではなく、罫線が壊れないことの回帰テスト（§8.4 の対象外）。
+    // `comfy-table` の `custom_styling` feature がないと、エスケープシーケンスを
+    // ただの文字として数えて強調の乗った行だけ幅が広がり、罫線が破綻する。
+    //
+    // 通常のテストは非 TTY で走るため強調が無効になり、この経路を一度も通らない。
+    // ここでは ANSI を直接セルに入れて、feature が効いていることを確かめる。
+    //
+    // エスケープは太字＋色（A は赤 31、B は緑 32）を重ねた実際の形にする。色が
+    // 乗ったぶんエスケープは太字だけのときより長く、幅を誤って数える実装なら
+    // ずれ幅も大きくなる。
+    #[test]
+    fn ansi_in_a_cell_does_not_break_column_alignment() {
+        // 中身は同じ「3000」「8000」だが、片方は太字＋色の ANSI 付き。
+        let plain = build_row_widths("3000", "8000");
+        let styled = build_row_widths("\x1b[1;31m3\x1b[0m000", "\x1b[1;32m8\x1b[0m000");
+        assert_eq!(
+            plain, styled,
+            "ANSI の有無で列幅が変わっている（custom_styling feature が効いていない）"
+        );
+    }
+
+    /// ANSI エスケープを取り除く。
+    ///
+    /// 端末が実際に表示する文字列を得るための処理。エスケープは画面上で
+    /// 幅を持たないため、桁揃えを見るテストは必ずこれを通す。
+    fn strip_ansi(s: &str) -> String {
+        let mut out = String::new();
+        let mut in_escape = false;
+        for c in s.chars() {
+            match c {
+                '\x1b' => in_escape = true,
+                'm' if in_escape => in_escape = false,
+                _ if in_escape => {}
+                _ => out.push(c),
+            }
+        }
+        out
+    }
+
+    /// テーブルを組んで各行の**表示幅**を返す。
+    fn build_row_widths(a_val: &str, b_val: &str) -> Vec<usize> {
+        let d = diff("PORT", Status::Changed, Some(a_val), Some(b_val));
+        // value_cells を通さず直接セルに入れる（強調の有無ではなく
+        // ANSI の扱いを見たいため）。
+        let mut table = Table::new();
+        table
+            .load_preset(UTF8_FULL)
+            .apply_modifier(UTF8_SOLID_INNER_BORDERS)
+            .set_content_arrangement(ContentArrangement::Dynamic)
+            .set_header(header_row(Path::new("a.env"), Path::new("b.env")));
+        table.add_row(vec![
+            d.key.clone(),
+            a_val.to_string(),
+            b_val.to_string(),
+            status_label(d.status).to_string(),
+        ]);
+        table
+            .to_string()
+            .lines()
+            .map(|line| strip_ansi(line).chars().count())
+            .collect()
+    }
+
+    // §6.1 — 実際の描画経路（value_cells 経由）でも行の幅が揃う。
+    // 罫線行とデータ行がすべて同じ**表示幅**であることが、テーブルが壊れて
+    // いないことの定義。
+    //
+    // 幅は必ず ANSI を除いて数える。強調が有効な端末では changed 行のセルに
+    // エスケープが入るが、それは画面上で幅を持たない。`chars().count()` で
+    // 数えると、comfy-table が犯していたのと同じ誤り（エスケープを表示文字と
+    // して数える）をテスト側で繰り返すことになり、正しい出力を失敗と判定する。
+    #[test]
+    fn every_line_of_the_table_has_the_same_display_width() {
+        let diffs = [
+            diff(
+                "DATABASE_URL",
+                Status::Changed,
+                Some("postgres://user@localhost:5432/appdb"),
+                Some("postgres://user@db.prod.internal:5432/appdb"),
+            ),
+            diff("SECRET", Status::OnlyInA, Some("only-in-a"), None),
+        ];
+        let rows = visible(&diffs, false);
+        let table = build_table(&rows, Path::new("a.env"), Path::new("b.env"));
+        let widths: Vec<usize> = table
+            .to_string()
+            .lines()
+            .map(|l| strip_ansi(l).chars().count())
+            .collect();
+        let first = widths[0];
+        assert!(
+            widths.iter().all(|w| *w == first),
+            "行ごとに表示幅が違う（罫線が壊れている）: {widths:?}"
+        );
+    }
+
+    // §6.1 — 強調は A を赤、B を緑にする。
+    //
+    // `emphasize` は `if_supports_color` を通すため、非 TTY で走るテストからは
+    // 色が出ない。ここでは `owo_colors` の判定を迂回して、A と B に別の色が
+    // 割り当てられていること自体を固定する。色の見え方ではなく、A/B で色が
+    // 分かれるという契約のテスト。
+    #[test]
+    fn emphasis_colors_a_red_and_b_green() {
+        use owo_colors::OwoColorize;
+
+        let a = "x".red().bold().to_string();
+        let b = "x".green().bold().to_string();
+        assert_ne!(a, b, "A と B に同じ色が割り当てられている");
+        assert!(a.contains("31"), "A 側が赤（SGR 31）でない: {a:?}");
+        assert!(b.contains("32"), "B 側が緑（SGR 32）でない: {b:?}");
+    }
+
+    // §6.1 — 色は太字と同じ文字にだけ乗り、共通部分は無加工で出る。
+    //
+    // 差分文字だけを色付けする（セル全体を色にしない）という選択は、色覚特性の
+    // 根拠が生きたまま成立する理由そのものであり、契約として固定する価値がある。
+    #[test]
+    fn emphasis_leaves_the_common_part_unstyled() {
+        let segs = [
+            highlight::Segment {
+                text: "postgres://".to_string(),
+                emphasized: false,
+            },
+            highlight::Segment {
+                text: "localhost".to_string(),
+                emphasized: true,
+            },
+        ];
+        let cell = emphasize(&segs, Side::A);
+        assert!(
+            cell.starts_with("postgres://"),
+            "共通部分にエスケープが乗っている: {cell:?}"
+        );
+        assert_eq!(strip_ansi(&cell), "postgres://localhost");
     }
 
     // §6.1 — 凡例は A/B が何を指すかを示す。

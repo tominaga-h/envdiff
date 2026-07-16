@@ -1,0 +1,91 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v[0-9]+.[0-9]+.[0-9]+" # 例: v1.0.0 のようなタグがPushされた時のみ発火
+
+permissions:
+  contents: write
+
+jobs:
+  create-release:
+    name: Create Release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Create GitHub Release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release create ${{ github.ref_name }} --draft --generate-notes
+
+  build-release:
+    name: Build & Upload Release Asset (${{ matrix.target }})
+    needs: ["create-release"]
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64-apple-darwin
+            os: macos-latest
+          - target: aarch64-apple-darwin
+            os: macos-latest
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-latest
+          # aarch64 Linux / Windows はネイティブランナーを使わずクロスコンパイルする。
+          # envdiff は純 Rust で C 依存がないため、実行せずビルドだけで足りる。
+          - target: aarch64-unknown-linux-gnu
+            os: ubuntu-latest
+          - target: x86_64-pc-windows-msvc
+            os: windows-latest
+          - target: aarch64-pc-windows-msvc
+            os: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # 非常に便利なRustバイナリアップロード用Action
+      - name: Build and upload
+        uses: taiki-e/upload-rust-binary-action@v1
+        with:
+          bin: envdiff
+          target: ${{ matrix.target }}
+          tar: unix # Unix系は tar.gz形式で圧縮
+          zip: windows # Windows は zip 形式で圧縮
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  publish-release:
+    name: Publish Release
+    # 全ターゲットのアップロード完了後に公開する。順序を逆にすると
+    # アセットのないリリースが世に出る。
+    needs: ["build-release"]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # リリースノートが未整備のまま公開されるのを防ぐ。ファイルが無ければ
+      # 公開そのものを見送り、draft のまま残して手動対応に委ねる。
+      - name: Check release notes
+        id: notes
+        run: |
+          path="docs/release/${{ github.ref_name }}.md"
+          if [ -f "$path" ]; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+            echo "path=$path" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::$path not found; leaving ${{ github.ref_name }} as a draft."
+          fi
+
+      # ノートの差し替えと draft 解除を 1 コマンドで行う。分けると、
+      # ノート更新だけ成功して公開が失敗する中途半端な状態が生じうる。
+      - name: Update notes and publish
+        if: steps.notes.outputs.exists == 'true'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release edit ${{ github.ref_name }} \
+            --notes-file "${{ steps.notes.outputs.path }}" \
+            --draft=false
