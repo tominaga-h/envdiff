@@ -5,7 +5,7 @@
 //! 「サマリと凡例を出す」の 4 点。§8.4 によりテーブルの文字列一致テストは書かない。
 
 use crate::diff::{Diff, Status, Summary};
-use comfy_table::{ContentArrangement, Table, presets::NOTHING};
+use comfy_table::{ContentArrangement, Table, presets::UTF8_FULL};
 use std::path::Path;
 
 /// 不在を示す記号（§6.1）。空文字の値は空セルとして表示され、これとは区別される。
@@ -60,6 +60,19 @@ fn legend_line(a: &Path, b: &Path) -> String {
     format!("A = {}, B = {}", a.display(), b.display())
 }
 
+/// ヘッダー行（§6.1 の列）。
+///
+/// A/B の列名にファイル名を入れるからこそ、STATUS 側でファイル名を繰り返さずに
+/// `only in A` と書ける（§6.1）。
+fn header_row(a: &Path, b: &Path) -> Vec<String> {
+    vec![
+        "KEY".to_string(),
+        format!("{} (A)", a.display()),
+        format!("{} (B)", b.display()),
+        "STATUS".to_string(),
+    ]
+}
+
 /// テーブル・サマリ・凡例を stdout に出す（§6.1）。
 ///
 /// 差分がなく `--all` もなければ何も出力しない。テーブルに色は付けない（§6.1）。
@@ -71,15 +84,12 @@ pub fn render(diffs: &[Diff], summary: &Summary, a: &Path, b: &Path, all: bool) 
 
     let mut table = Table::new();
     table
-        .load_preset(NOTHING)
+        // 罫線付き。折り返しで行の高さが不揃いになっても（§6.1）、行間の罫線で
+        // どこまでが 1 変数かが分かる。
+        .load_preset(UTF8_FULL)
         // 長い値は切り詰めず折り返す（§6.1）。ターミナル幅に応じて調整される。
         .set_content_arrangement(ContentArrangement::Dynamic)
-        .set_header(vec![
-            "KEY".to_string(),
-            format!("{} (A)", a.display()),
-            format!("{} (B)", b.display()),
-            "STATUS".to_string(),
-        ]);
+        .set_header(header_row(a, b));
 
     for d in rows {
         table.add_row(vec![
@@ -203,6 +213,34 @@ mod tests {
             ..Default::default()
         };
         assert!(summary_line(&s).starts_with("1 difference "));
+    }
+
+    // §6.1 — 列は KEY / <Aのファイル名> (A) / <Bのファイル名> (B) / STATUS。
+    #[test]
+    fn header_row_names_the_four_columns_with_filenames() {
+        assert_eq!(
+            header_row(Path::new(".env"), Path::new(".env.example")),
+            ["KEY", ".env (A)", ".env.example (B)", "STATUS"]
+        );
+    }
+
+    // §6.1 — 先頭行はデータ行ではなくヘッダーとして組まれる。
+    // 罫線の見た目自体は検証しない（§8.4）。ヘッダーが存在することだけを固定する。
+    #[test]
+    fn table_renders_the_header_above_the_data_rows() {
+        let diffs = [diff("PORT", Status::Changed, Some("3000"), Some("8000"))];
+        let mut table = Table::new();
+        table
+            .load_preset(UTF8_FULL)
+            .set_header(header_row(Path::new(".env"), Path::new(".env.example")));
+        for d in visible(&diffs, false) {
+            table.add_row(vec![d.key.as_str(), "3000", "8000", "changed"]);
+        }
+        assert!(table.header().is_some(), "ヘッダーが設定されていること");
+        let out = table.to_string();
+        let key_at = out.find("KEY").expect("ヘッダーの KEY が出力にある");
+        let port_at = out.find("PORT").expect("データ行の PORT が出力にある");
+        assert!(key_at < port_at, "ヘッダーはデータ行より前に出る");
     }
 
     // §6.1 — 凡例は A/B が何を指すかを示す。
