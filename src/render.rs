@@ -5,9 +5,11 @@
 //! 「サマリと凡例を出す」の 4 点。§8.4 によりテーブルの文字列一致テストは書かない。
 
 use crate::diff::{Diff, Status, Summary};
+use crate::highlight;
 use comfy_table::{
     ContentArrangement, Table, modifiers::UTF8_SOLID_INNER_BORDERS, presets::UTF8_FULL,
 };
+use owo_colors::{OwoColorize, Stream};
 use std::path::Path;
 
 /// 不在を示す記号（§6.1）。空文字の値は空セルとして表示され、これとは区別される。
@@ -29,6 +31,46 @@ fn status_label(status: Status) -> &'static str {
 /// 値のセル。不在は `-`、空文字の値は空セル（§6.1）。
 fn value_cell(value: Option<&str>) -> &str {
     value.unwrap_or(ABSENT)
+}
+
+/// 1 行分の A/B の値セルを組む（§6.1 の「強調」）。
+///
+/// `changed` 行だけが強調の対象になる。`only in A` / `only in B` は片側にキーが
+/// 存在せず比較対象がないため、値を丸ごと太字にすると「値の中のどこかが変わった」
+/// という誤読を招く。実際にはキーごと存在しないのであり、それは STATUS 列が言っている。
+/// `same` は定義上差分がない。
+fn value_cells(d: &Diff) -> (String, String) {
+    match (d.status, d.a.as_deref(), d.b.as_deref()) {
+        (Status::Changed, Some(a), Some(b)) => {
+            let (a_segs, b_segs) = highlight::segments(a, b);
+            (emphasize(&a_segs), emphasize(&b_segs))
+        }
+        _ => (
+            value_cell(d.a.as_deref()).to_string(),
+            value_cell(d.b.as_deref()).to_string(),
+        ),
+    }
+}
+
+/// 強調セグメントに太字を被せてセル文字列にする（§6.1）。
+///
+/// 判定は **stdout** に対して行う（stderr の warning / error とは独立）。
+/// `NO_COLOR` および非 TTY では `if_supports_color` が素の文字列を返すため、
+/// セル文字列は強調なしのときと完全に同一になる。
+///
+/// 太字は色ではないため、§6.1 の「テーブルに色を付けない」とは矛盾しない。
+fn emphasize(segs: &[highlight::Segment]) -> String {
+    segs.iter()
+        .map(|s| {
+            if s.emphasized {
+                s.text
+                    .if_supports_color(Stream::Stdout, |t| t.bold())
+                    .to_string()
+            } else {
+                s.text.clone()
+            }
+        })
+        .collect()
 }
 
 /// 表示対象の差分を絞る（§5.1）。
@@ -96,11 +138,12 @@ pub fn render(diffs: &[Diff], summary: &Summary, a: &Path, b: &Path, all: bool) 
         .set_header(header_row(a, b));
 
     for d in rows {
+        let (a_cell, b_cell) = value_cells(d);
         table.add_row(vec![
-            d.key.as_str(),
-            value_cell(d.a.as_deref()),
-            value_cell(d.b.as_deref()),
-            status_label(d.status),
+            d.key.clone(),
+            a_cell,
+            b_cell,
+            status_label(d.status).to_string(),
         ]);
     }
 
@@ -246,6 +289,47 @@ mod tests {
         let key_at = out.find("KEY").expect("ヘッダーの KEY が出力にある");
         let port_at = out.find("PORT").expect("データ行の PORT が出力にある");
         assert!(key_at < port_at, "ヘッダーはデータ行より前に出る");
+    }
+
+    // §6.1 — 強調は changed 行だけ。片側にキーがない行は無加工で出る。
+    //
+    // テストは非 TTY（cargo test はパイプ経由）で走るため `if_supports_color` は
+    // 素の文字列を返す。ここで主張するのは「セルの中身が値そのものであること」
+    // であり、太字の見え方ではない（§8.4）。
+    #[test]
+    fn one_sided_rows_are_not_emphasized() {
+        let only_a = diff("KEY", Status::OnlyInA, Some("value"), None);
+        assert_eq!(value_cells(&only_a), ("value".to_string(), "-".to_string()));
+
+        let only_b = diff("KEY", Status::OnlyInB, None, Some("value"));
+        assert_eq!(value_cells(&only_b), ("-".to_string(), "value".to_string()));
+    }
+
+    // §6.1 — same 行も強調しない（定義上、差分がない）。
+    #[test]
+    fn same_rows_are_not_emphasized() {
+        let d = diff("KEY", Status::Same, Some("x"), Some("x"));
+        assert_eq!(value_cells(&d), ("x".to_string(), "x".to_string()));
+    }
+
+    // §6.1 / §5.2 — 強調しても `-` と空セルの区別は保たれる。
+    #[test]
+    fn emphasis_preserves_the_distinction_between_absent_and_empty() {
+        let empty_vs_absent = diff("KEY", Status::OnlyInA, Some(""), None);
+        assert_eq!(
+            value_cells(&empty_vs_absent),
+            ("".to_string(), "-".to_string())
+        );
+    }
+
+    // §6.1 — 非 TTY ではセル文字列が値と完全に同一（ANSI が混ざらない）。
+    // changed 行であっても、強調が有効でなければ素の値が出る。
+    #[test]
+    fn changed_cells_carry_the_raw_values_when_emphasis_is_disabled() {
+        let d = diff("PORT", Status::Changed, Some("3000"), Some("8000"));
+        let (a, b) = value_cells(&d);
+        assert_eq!(a, "3000");
+        assert_eq!(b, "8000");
     }
 
     // §6.1 — 凡例は A/B が何を指すかを示す。
