@@ -76,8 +76,12 @@ is not. This asymmetry is deliberate.
 
 ## Conventions
 
-- Comments and docs in the source are Japanese; user-facing CLI output, README.md, and commit subjects are
-  English. `docs/README_ja.md` mirrors `README.md`.
+- Comments and docs in the source are Japanese; user-facing CLI output and README.md are English.
+  `docs/README_ja.md` mirrors `README.md`.
 - Rust 2024 edition, MSRV 1.85.
 - Doc comments explain *why* a decision holds (usually citing `§`), not what the code does.
 - Commits follow Conventional Commits (`feat:`, `docs:`, `test(cli):`).
+- **Write commit messages in Japanese** — subject and body both. The type and scope stay English
+  (`feat:`, `test(cli):`); everything after the colon is Japanese. The body explains *why*, same as
+  doc comments. Commits before 456aea1 are English, from when this file said subjects should be
+  English; leave them.
